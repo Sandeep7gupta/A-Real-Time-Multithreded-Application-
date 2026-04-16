@@ -1,0 +1,1883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Real-Time Multithreaded Application Simulator</title>
+  <!--
+   * ============================================================
+   * PROJECT  : Real-Time Multithreaded Application Simulator
+   * AUTHOR   : College Project
+   * PURPOSE  : Visually simulate OS-level threading concepts:
+   *            - Thread lifecycle (New → Ready → Running → Waiting → Terminated)
+   *            - CPU scheduling algorithms (FCFS, Round Robin, SJF, Priority)
+   *            - Mutex locks / Semaphores / Critical sections
+   *            - Deadlock detection (Resource Allocation Graph)
+   *            - Real-time performance metrics (Gantt chart, CPU utilisation)
+   * TECH     : Pure HTML5 + CSS3 + Vanilla JavaScript (ES6+)
+   *            No external libraries required.
+   * ============================================================
+   -->
+
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ============================================================
+     * CSS VARIABLES — Design Tokens
+     * All colours, sizes and transitions come from here so the
+     * entire UI can be reskinned by changing these values alone.
+     * ============================================================ */
+    :root {
+      --bg-base:        #0d0f17;   /* darkest background */
+      --bg-panel:       #131825;   /* card/panel background */
+      --bg-panel2:      #1a2235;   /* slightly lighter panel */
+      --bg-input:       #0f1520;   /* input fields */
+      --accent:         #4f8ef7;   /* primary blue accent */
+      --accent2:        #7c5cfc;   /* purple accent */
+      --accent3:        #00c896;   /* green accent */
+      --accent4:        #f7b94f;   /* amber / warning */
+      --accent5:        #f74f4f;   /* red / danger */
+      --text-primary:   #e8ecf4;
+      --text-secondary: #7a8aaa;
+      --text-muted:     #3d4d6a;
+      --border:         #1e2d4a;
+      --border-bright:  #2a3f64;
+
+      /* Thread state colours */
+      --state-new:        #4f8ef7;  /* blue  */
+      --state-ready:      #f7b94f;  /* amber */
+      --state-running:    #00c896;  /* green */
+      --state-waiting:    #a64ff7;  /* purple */
+      --state-terminated: #5a6a8a;  /* grey  */
+      --state-deadlock:   #f74f4f;  /* red   */
+
+      --font-mono: 'JetBrains Mono', monospace;
+      --font-ui:   'Space Grotesk', sans-serif;
+      --radius:    10px;
+      --radius-sm: 6px;
+      --transition: 0.25s ease;
+    }
+
+    /* ============================================================
+     * RESET & BASE
+     * ============================================================ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-ui);
+      background: var(--bg-base);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* scrollbar styling */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-base); }
+    ::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 3px; }
+
+    /* ============================================================
+     * HEADER
+     * ============================================================ */
+    header {
+      background: linear-gradient(135deg, #0d1a3a 0%, #0d0f17 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .header-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-icon {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+
+    header h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+    header p  { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+
+    .header-controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    /* ============================================================
+     * LAYOUT — Two-column grid
+     * ============================================================ */
+    .app-layout {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 0;
+      min-height: calc(100vh - 69px);
+    }
+
+    /* LEFT SIDEBAR */
+    .sidebar {
+      background: var(--bg-panel);
+      border-right: 1px solid var(--border);
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* MAIN CONTENT */
+    .main-content {
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* ============================================================
+     * CARD / PANEL
+     * ============================================================ */
+    .card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-panel2);
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-title .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .card-body { padding: 16px; }
+
+    /* ============================================================
+     * BUTTONS
+     * ============================================================ */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid transparent;
+      font-family: var(--font-ui);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all var(--transition);
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .btn-primary:hover { background: #3a7ae0; }
+
+    .btn-success {
+      background: var(--accent3);
+      color: #fff;
+    }
+    .btn-success:hover { background: #00b085; }
+
+    .btn-danger {
+      background: var(--accent5);
+      color: #fff;
+    }
+    .btn-danger:hover { background: #d43f3f; }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-secondary);
+      border-color: var(--border-bright);
+    }
+    .btn-ghost:hover {
+      background: var(--bg-panel2);
+      color: var(--text-primary);
+    }
+
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+
+    /* ============================================================
+     * FORM ELEMENTS
+     * ============================================================ */
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-label  { font-size: 12px; color: var(--text-secondary); font-weight: 500; }
+
+    .form-input, .form-select {
+      background: var(--bg-input);
+      border: 1px solid var(--border-bright);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      padding: 8px 10px;
+      width: 100%;
+      transition: border-color var(--transition);
+    }
+    .form-input:focus, .form-select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .form-select option { background: var(--bg-panel); }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    /* ============================================================
+     * STAT CHIPS
+     * ============================================================ */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 6px;
+    }
+
+    .stat-chip {
+      background: var(--bg-panel2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px;
+      text-align: center;
+    }
+    .stat-chip .val {
+      font-size: 24px;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      line-height: 1;
+    }
+    .stat-chip .lbl { font-size: 10px; color: var(--text-secondary); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    /* ============================================================
+     * THREAD TABLE
+     * ============================================================ */
+    .thread-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .thread-table th {
+      text-align: left;
+      padding: 8px 12px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+    }
+    .thread-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    .thread-table tr:last-child td { border-bottom: none; }
+    .thread-table tr:hover td { background: var(--bg-panel2); }
+
+    /* thread name with colour dot */
+    .thread-name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+    }
+    .thread-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ============================================================
+     * STATE BADGES
+     * ============================================================ */
+    .badge {
+      display: inline-block;
+      padding: 3px 9px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .badge-new        { background: rgba(79,142,247,.15); color: var(--state-new); border: 1px solid rgba(79,142,247,.3); }
+    .badge-ready      { background: rgba(247,185,79,.15); color: var(--state-ready); border: 1px solid rgba(247,185,79,.3); }
+    .badge-running    { background: rgba(0,200,150,.15);  color: var(--state-running); border: 1px solid rgba(0,200,150,.3); }
+    .badge-waiting    { background: rgba(166,79,247,.15); color: var(--state-waiting); border: 1px solid rgba(166,79,247,.3); }
+    .badge-terminated { background: rgba(90,106,138,.15); color: var(--state-terminated); border: 1px solid rgba(90,106,138,.3); }
+    .badge-deadlock   { background: rgba(247,79,79,.15);  color: var(--state-deadlock); border: 1px solid rgba(247,79,79,.3); }
+
+    /* ============================================================
+     * PROGRESS BAR
+     * ============================================================ */
+    .progress-bar {
+      height: 6px;
+      background: var(--bg-input);
+      border-radius: 3px;
+      overflow: hidden;
+      width: 80px;
+    }
+    .progress-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.5s ease;
+    }
+
+    /* ============================================================
+     * GANTT CHART
+     * Timeline of which thread ran in each time slot.
+     * Each cell is coloured by thread colour.
+     * ============================================================ */
+    #gantt-container {
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+    #gantt-chart {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: max-content;
+    }
+    .gantt-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .gantt-label {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text-secondary);
+      width: 50px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+    .gantt-cell {
+      width: 20px;
+      height: 20px;
+      border-radius: 3px;
+      background: var(--bg-panel2);
+      border: 1px solid var(--border);
+      transition: background 0.2s;
+      cursor: default;
+      position: relative;
+    }
+    .gantt-cell[title]:hover::after {
+      content: attr(title);
+      position: absolute;
+      bottom: 120%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #000;
+      color: #fff;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      white-space: nowrap;
+      pointer-events: none;
+      z-index: 10;
+    }
+    .gantt-time-row { display: flex; align-items: center; gap: 4px; }
+    .gantt-time-label {
+      width: 50px;
+      text-align: right;
+      font-size: 9px;
+      color: var(--text-muted);
+    }
+    .gantt-tick {
+      width: 20px;
+      font-size: 9px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      text-align: center;
+    }
+
+    /* ============================================================
+     * RESOURCE GRAPH (Deadlock Visualisation)
+     * Drawn on a <canvas> element.
+     * ============================================================ */
+    #resource-canvas {
+      width: 100%;
+      height: 220px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-panel2);
+      border: 1px solid var(--border);
+      display: block;
+    }
+
+    /* ============================================================
+     * CPU UTILISATION BAR
+     * ============================================================ */
+    .cpu-bar-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .cpu-bar-label { font-size: 12px; color: var(--text-secondary); width: 50px; flex-shrink: 0; }
+    .cpu-bar-track {
+      flex: 1;
+      height: 12px;
+      background: var(--bg-input);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .cpu-bar-fill {
+      height: 100%;
+      border-radius: 6px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      transition: width 0.4s ease;
+    }
+    .cpu-bar-val { font-size: 12px; font-family: var(--font-mono); width: 38px; text-align: right; }
+
+    /* ============================================================
+     * LOG CONSOLE
+     * ============================================================ */
+    #log-console {
+      background: #07090f;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px;
+      height: 180px;
+      overflow-y: auto;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.7;
+    }
+    .log-line { display: flex; gap: 10px; }
+    .log-time  { color: var(--text-muted); flex-shrink: 0; }
+    .log-msg   { color: var(--text-secondary); }
+    .log-msg.info    { color: var(--accent); }
+    .log-msg.success { color: var(--accent3); }
+    .log-msg.warn    { color: var(--accent4); }
+    .log-msg.error   { color: var(--accent5); }
+
+    /* ============================================================
+     * MUTEX / SEMAPHORE INDICATORS
+     * ============================================================ */
+    .lock-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .lock-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      background: var(--bg-panel2);
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+    }
+    .lock-icon { font-size: 16px; }
+    .lock-name { font-size: 13px; font-weight: 600; flex: 1; }
+    .lock-holder { font-size: 12px; color: var(--text-secondary); }
+    .lock-status { font-size: 11px; font-weight: 700; }
+    .lock-status.free { color: var(--accent3); }
+    .lock-status.held { color: var(--accent5); }
+
+    /* ============================================================
+     * SPEED CONTROL
+     * ============================================================ */
+    .speed-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    input[type=range] {
+      -webkit-appearance: none;
+      appearance: none;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--border-bright);
+      cursor: pointer;
+      flex: 1;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+    }
+
+    /* ============================================================
+     * ALGORITHM TABS
+     * ============================================================ */
+    .algo-tabs {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .algo-tab {
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid var(--border-bright);
+      background: transparent;
+      color: var(--text-secondary);
+      transition: all var(--transition);
+    }
+    .algo-tab.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .algo-tab:hover:not(.active) {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* ============================================================
+     * STATE DIAGRAM (Thread lifecycle SVG)
+     * ============================================================ */
+    #state-diagram { width: 100%; height: 200px; }
+
+    /* ============================================================
+     * DEADLOCK ALERT
+     * ============================================================ */
+    .deadlock-alert {
+      display: none;
+      padding: 10px 14px;
+      background: rgba(247,79,79,.1);
+      border: 1px solid rgba(247,79,79,.4);
+      border-radius: var(--radius-sm);
+      color: var(--accent5);
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+    .deadlock-alert.visible { display: flex; align-items: center; gap: 8px; }
+
+    /* ============================================================
+     * RESPONSIVE
+     * ============================================================ */
+    @media (max-width: 900px) {
+      .app-layout { grid-template-columns: 1fr; }
+      .sidebar { border-right: none; border-bottom: 1px solid var(--border); }
+      .stat-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /* ============================================================
+     * ANIMATIONS
+     * ============================================================ */
+    @keyframes pulse-running {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(0,200,150,0.6); }
+      50%       { box-shadow: 0 0 0 5px rgba(0,200,150,0); }
+    }
+    .state-running-row td { animation: pulse-running 1.5s ease-in-out infinite; }
+    @keyframes fade-in {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: none; }
+    }
+    .fade-in { animation: fade-in 0.3s ease forwards; }
+  </style>
+</head>
+<body>
+
+<!-- ============================================================
+     HEADER
+     ============================================================ -->
+<header>
+  <div class="header-title">
+    <div class="logo-icon">⚙</div>
+    <div>
+      <h1>Multithreaded Application Simulator</h1>
+      <p>Real-Time Thread Scheduling &amp; Synchronisation</p>
+    </div>
+  </div>
+  <div class="header-controls">
+    <div class="speed-wrap" style="min-width:180px">
+      <span style="font-size:12px;color:var(--text-secondary)">Speed</span>
+      <input type="range" id="speed-slider" min="1" max="10" value="5" title="Simulation Speed" />
+      <span id="speed-label" style="font-size:12px;font-family:var(--font-mono);width:28px">5x</span>
+    </div>
+    <button class="btn btn-success" id="start-btn" onclick="startSimulation()">▶ Start</button>
+    <button class="btn btn-danger"  id="stop-btn"  onclick="stopSimulation()" disabled>⏸ Pause</button>
+    <button class="btn btn-ghost"   id="reset-btn" onclick="resetSimulation()">↺ Reset</button>
+  </div>
+</header>
+
+<!-- ============================================================
+     MAIN LAYOUT
+     ============================================================ -->
+<div class="app-layout">
+
+  <!-- ══════════════════════════════════════════════════════
+       LEFT SIDEBAR  — Configuration Panel
+       ══════════════════════════════════════════════════════ -->
+  <aside class="sidebar">
+
+    <!-- 1. Add Thread -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title"><span class="dot"></span>Add Thread</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+        <div class="form-group">
+          <label class="form-label">Thread Name</label>
+          <input class="form-input" id="t-name" type="text" placeholder="e.g. T1" maxlength="6" value="T1" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Burst Time</label>
+            <input class="form-input" id="t-burst" type="number" min="1" max="20" value="5" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Priority (1=High)</label>
+            <input class="form-input" id="t-priority" type="number" min="1" max="10" value="3" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Arrival Time</label>
+            <input class="form-input" id="t-arrival" type="number" min="0" max="30" value="0" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Needs Lock</label>
+            <select class="form-select" id="t-lock">
+              <option value="none">None</option>
+              <option value="mutex1">Mutex-1</option>
+              <option value="mutex2">Mutex-2</option>
+              <option value="sem">Semaphore</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="addThread()" style="width:100%">+ Add Thread</button>
+      </div>
+    </div>
+
+    <!-- 2. Scheduling Algorithm -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title"><span class="dot" style="background:var(--accent2)"></span>Scheduler</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:10px">
+        <div class="algo-tabs" id="algo-tabs">
+          <button class="algo-tab active" data-algo="fcfs"     onclick="setAlgo('fcfs',this)">FCFS</button>
+          <button class="algo-tab"        data-algo="rr"       onclick="setAlgo('rr',this)">Round Robin</button>
+          <button class="algo-tab"        data-algo="sjf"      onclick="setAlgo('sjf',this)">SJF</button>
+          <button class="algo-tab"        data-algo="priority" onclick="setAlgo('priority',this)">Priority</button>
+        </div>
+        <div id="rr-quantum-wrap" style="display:none">
+          <div class="form-group">
+            <label class="form-label">Quantum (time units)</label>
+            <input class="form-input" id="rr-quantum" type="number" min="1" max="10" value="2" />
+          </div>
+        </div>
+        <p style="font-size:12px;color:var(--text-secondary);line-height:1.5" id="algo-desc">
+          First-Come First-Served: threads execute in arrival order. Non-preemptive.
+        </p>
+      </div>
+    </div>
+
+    <!-- 3. Mutex / Semaphore Config -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title"><span class="dot" style="background:var(--accent4)"></span>Locks</span>
+      </div>
+      <div class="card-body">
+        <div class="lock-grid" id="lock-grid">
+          <!-- populated by JS -->
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. Deadlock Detection -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title"><span class="dot" style="background:var(--accent5)"></span>Deadlock Detection</span>
+        <button class="btn btn-sm btn-ghost" onclick="detectDeadlock()">Detect</button>
+      </div>
+      <div class="card-body">
+        <div class="deadlock-alert" id="deadlock-alert">⚠ Deadlock Detected!</div>
+        <canvas id="resource-canvas" width="280" height="200"></canvas>
+        <p style="font-size:11px;color:var(--text-muted);margin-top:8px">
+          Resource Allocation Graph. Circle = thread, Square = resource.
+          Red edge = circular wait (deadlock).
+        </p>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ══════════════════════════════════════════════════════
+       MAIN CONTENT — Visualisation Area
+       ══════════════════════════════════════════════════════ -->
+  <main class="main-content">
+
+    <!-- ── Stats Row ── -->
+    <div class="stat-grid">
+      <div class="stat-chip">
+        <div class="val" id="stat-threads" style="color:var(--accent)">0</div>
+        <div class="lbl">Threads</div>
+      </div>
+      <div class="stat-chip">
+        <div class="val" id="stat-cpu" style="color:var(--accent3)">0%</div>
+        <div class="lbl">CPU Util.</div>
+      </div>
+      <div class="stat-chip">
+        <div class="val" id="stat-tick" style="color:var(--accent2)">0</div>
+        <div class="lbl">Clock Tick</div>
+      </div>
+      <div class="stat-chip">
+        <div class="val" id="stat-done" style="color:var(--accent4)">0</div>
+        <div class="lbl">Completed</div>
+      </div>
+    </div>
+
+    <!-- ── Thread State Diagram ── -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title"><span class="dot" style="background:var(--accent3)"></span>Thread Lifecycle — State Machine</span>
+      </div>
+      <div class="card-body" style="padding:10px">
+        <!--
+          SVG State Transition Diagram
+          States: New → Ready → Running → (Waiting or Terminated)
+          Arrows are drawn using SVG paths with arrowhead markers.
+        -->
+        <svg id="state-diagram" viewBox="0 0 700 170">
+          <defs>
+            <marker id="arrowBlue"   markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 Z" fill="var(--state-new)" />
+            </marker>
+            <marker id="arrowGreen"  markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 Z" fill="var(--state-running)" />
+            </marker>
+            <marker id="arrowAmber"  markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 Z" fill="var(--state-ready)" />
+            </marker>
+            <marker id="arrowPurple" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 Z" fill="var(--state-waiting)" />
+            </marker>
+            <marker id="arrowGrey"   markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 Z" fill="var(--state-terminated)" />
+            </marker>
+          </defs>
+          <!-- State Nodes -->
+          <rect x="10"  y="65" width="90" height="40" rx="8" fill="rgba(79,142,247,.15)" stroke="var(--state-new)" stroke-width="1.5"/>
+          <text x="55"  y="90" text-anchor="middle" fill="var(--state-new)"  font-size="13" font-weight="600" font-family="Space Grotesk,sans-serif">NEW</text>
+
+          <rect x="160" y="65" width="90" height="40" rx="8" fill="rgba(247,185,79,.15)" stroke="var(--state-ready)" stroke-width="1.5"/>
+          <text x="205" y="90" text-anchor="middle" fill="var(--state-ready)" font-size="13" font-weight="600" font-family="Space Grotesk,sans-serif">READY</text>
+
+          <rect x="310" y="65" width="100" height="40" rx="8" fill="rgba(0,200,150,.15)" stroke="var(--state-running)" stroke-width="2"/>
+          <text x="360" y="90" text-anchor="middle" fill="var(--state-running)" font-size="13" font-weight="600" font-family="Space Grotesk,sans-serif">RUNNING</text>
+
+          <rect x="470" y="20" width="100" height="40" rx="8" fill="rgba(166,79,247,.15)" stroke="var(--state-waiting)" stroke-width="1.5"/>
+          <text x="520" y="45" text-anchor="middle" fill="var(--state-waiting)" font-size="13" font-weight="600" font-family="Space Grotesk,sans-serif">WAITING</text>
+
+          <rect x="470" y="115" width="120" height="40" rx="8" fill="rgba(90,106,138,.15)" stroke="var(--state-terminated)" stroke-width="1.5"/>
+          <text x="530" y="140" text-anchor="middle" fill="var(--state-terminated)" font-size="13" font-weight="600" font-family="Space Grotesk,sans-serif">TERMINATED</text>
+
+          <!-- Arrows: New → Ready -->
+          <line x1="100" y1="85" x2="158" y2="85" stroke="var(--state-new)" stroke-width="1.5" marker-end="url(#arrowBlue)"/>
+          <text x="129" y="79" text-anchor="middle" fill="var(--state-new)" font-size="10" font-family="Space Grotesk,sans-serif">admit</text>
+
+          <!-- Ready → Running -->
+          <line x1="250" y1="85" x2="308" y2="85" stroke="var(--state-ready)" stroke-width="1.5" marker-end="url(#arrowAmber)"/>
+          <text x="279" y="79" text-anchor="middle" fill="var(--state-ready)" font-size="10" font-family="Space Grotesk,sans-serif">dispatch</text>
+
+          <!-- Running → Waiting -->
+          <path d="M 410 75 Q 440 50 468 45" fill="none" stroke="var(--state-running)" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+          <text x="445" y="55" fill="var(--state-running)" font-size="10" font-family="Space Grotesk,sans-serif">I/O req</text>
+
+          <!-- Waiting → Ready -->
+          <path d="M 470 52 Q 240 10 250 75" fill="none" stroke="var(--state-waiting)" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowPurple)"/>
+          <text x="330" y="20" fill="var(--state-waiting)" font-size="10" font-family="Space Grotesk,sans-serif">I/O done</text>
+
+          <!-- Running → Terminated -->
+          <path d="M 410 95 Q 440 115 468 125" fill="none" stroke="var(--state-terminated)" stroke-width="1.5" marker-end="url(#arrowGrey)"/>
+          <text x="445" y="120" fill="var(--state-terminated)" font-size="10" font-family="Space Grotesk,sans-serif">exit</text>
+
+          <!-- Running → Ready (preempt) -->
+          <path d="M 310 75 Q 270 50 252 76" fill="none" stroke="var(--state-ready)" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrowAmber)"/>
+          <text x="265" y="52" fill="var(--state-ready)" font-size="10" font-family="Space Grotesk,sans-serif">preempt</text>
+        </svg>
+      </div>
+    </div>
+
+    <!-- ── Active Threads Table ── -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title"><span class="dot" style="background:var(--accent4)"></span>Thread Queue</span>
+        <button class="btn btn-sm btn-ghost" onclick="clearTerminated()">Clear Terminated</button>
+      </div>
+      <div class="card-body" style="padding:0;overflow-x:auto">
+        <table class="thread-table" id="thread-table">
+          <thead>
+            <tr>
+              <th>Thread</th>
+              <th>State</th>
+              <th>Burst</th>
+              <th>Remaining</th>
+              <th>Priority</th>
+              <th>Arrival</th>
+              <th>Lock</th>
+              <th>Progress</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="thread-tbody">
+            <tr>
+              <td colspan="9" style="text-align:center;color:var(--text-muted);padding:24px">
+                No threads yet — add some from the left panel.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── CPU Utilisation ── -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title"><span class="dot" style="background:var(--accent)"></span>CPU Utilisation per Thread</span>
+      </div>
+      <div class="card-body" id="cpu-util-body">
+        <p style="color:var(--text-muted);font-size:13px">Start simulation to see CPU utilisation.</p>
+      </div>
+    </div>
+
+    <!-- ── Gantt Chart ── -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title"><span class="dot" style="background:var(--accent2)"></span>Gantt Chart — Execution Timeline</span>
+        <button class="btn btn-sm btn-ghost" onclick="clearGantt()">Clear</button>
+      </div>
+      <div class="card-body">
+        <div id="gantt-container">
+          <div id="gantt-chart">
+            <p style="color:var(--text-muted);font-size:13px">Gantt chart will appear here during simulation.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Log Console ── -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title"><span class="dot" style="background:var(--accent3)"></span>System Log Console</span>
+        <button class="btn btn-sm btn-ghost" onclick="clearLog()">Clear</button>
+      </div>
+      <div class="card-body" style="padding:8px">
+        <div id="log-console"></div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+
+<!-- ============================================================
+     JAVASCRIPT — Simulation Engine
+     ============================================================ -->
+<script>
+/**
+ * ============================================================
+ * MULTITHREADED SIMULATOR — Core Engine
+ *
+ * Architecture Overview:
+ * ─────────────────────
+ *  SimState       — global mutable state (threads, clock, locks…)
+ *  addThread()    — creates a new Thread object and pushes to state
+ *  startSimulation() / stopSimulation() / resetSimulation() — control flow
+ *  tick()         — called every interval; runs one clock cycle
+ *  schedule()     — returns the next thread to run per chosen algorithm
+ *  acquireLock()  — mutex/semaphore acquisition logic
+ *  releaseLock()  — releases a lock held by a thread
+ *  detectDeadlock() — cycle detection on the resource-allocation graph
+ *  renderAll()    — re-renders every UI component
+ *  renderGantt()  — updates Gantt chart
+ *  renderResource() — draws resource allocation graph on canvas
+ *  log()          — appends a line to the console
+ * ============================================================
+ */
+
+/* ──────────────────────────────────────────────────────────
+   CONSTANTS
+   ────────────────────────────────────────────────────────── */
+
+/** Thread states — mirrors standard OS thread lifecycle */
+const STATE = {
+  NEW:        'new',
+  READY:      'ready',
+  RUNNING:    'running',
+  WAITING:    'waiting',
+  TERMINATED: 'terminated',
+};
+
+/** Available locks in the simulation */
+const LOCK_IDS = ['mutex1', 'mutex2', 'sem'];
+
+/** Colour palette for threads (cycles after 8) */
+const THREAD_COLOURS = [
+  '#4f8ef7','#00c896','#f7b94f','#a64ff7',
+  '#f74f4f','#4ff7e8','#f74fb5','#7afc4f',
+];
+
+/** Human-readable algorithm descriptions */
+const ALGO_DESC = {
+  fcfs:     'First-Come First-Served: threads execute in arrival order. Non-preemptive.',
+  rr:       'Round Robin: each thread gets a fixed time quantum before being preempted.',
+  sjf:      'Shortest Job First: thread with least remaining burst time runs next. Non-preemptive.',
+  priority: 'Priority Scheduling: thread with lowest priority number (1 = highest) runs next.',
+};
+
+/* ──────────────────────────────────────────────────────────
+   GLOBAL STATE
+   ────────────────────────────────────────────────────────── */
+
+/**
+ * SimState — single source of truth for the entire simulation.
+ * @type {{
+ *   threads: Thread[],
+ *   clock: number,
+ *   running: boolean,
+ *   intervalId: number|null,
+ *   algo: string,
+ *   quantum: number,
+ *   quantumCounter: number,
+ *   currentThread: Thread|null,
+ *   locks: Object.<string, {holder:string|null, queue:string[]}>,
+ *   ganttHistory: Array<{threadId:string,color:string,tick:number}>,
+ *   totalIdleTicks: number,
+ *   threadCounter: number,
+ * }}
+ */
+const SimState = {
+  threads:        [],
+  clock:          0,
+  running:        false,
+  intervalId:     null,
+  algo:           'fcfs',
+  quantum:        2,
+  quantumCounter: 0,
+  currentThread:  null,
+
+  /**
+   * Locks map: each lock has a holder (thread ID or null) and a wait queue.
+   * We simulate three locks: mutex1, mutex2, semaphore.
+   */
+  locks: {
+    mutex1: { holder: null, queue: [] },
+    mutex2: { holder: null, queue: [] },
+    sem:    { holder: null, queue: [] },
+  },
+
+  ganttHistory:  [],   // Array of { threadId, color, tick }
+  totalIdleTicks: 0,   // Ticks where no thread ran (CPU idle)
+  threadCounter:  0,   // Auto-increment for unique thread IDs
+};
+
+/* ──────────────────────────────────────────────────────────
+   THREAD OBJECT FACTORY
+   ────────────────────────────────────────────────────────── */
+
+/**
+ * Creates a new Thread descriptor object.
+ *
+ * @param {string} name        - Human-readable name (e.g. "T1")
+ * @param {number} burstTime   - Total CPU time needed
+ * @param {number} priority    - Priority level (1 = highest)
+ * @param {number} arrivalTime - Clock tick at which thread arrives
+ * @param {string} lockNeeded  - Lock ID required, or 'none'
+ * @param {string} colour      - CSS hex colour for this thread
+ * @returns {Object} Thread descriptor
+ */
+function createThread(name, burstTime, priority, arrivalTime, lockNeeded, colour) {
+  const id = 'T_' + (++SimState.threadCounter);
+  return {
+    id,
+    name,
+    colour,
+    burstTime,
+    remaining:    burstTime,   // remaining CPU burst time
+    priority,
+    arrivalTime,
+    lockNeeded,                // 'none' | 'mutex1' | 'mutex2' | 'sem'
+    state:        STATE.NEW,
+    cpuTime:      0,           // total ticks spent running
+    waitTime:     0,           // total ticks spent in READY state
+    turnAround:   0,           // finishTime - arrivalTime
+    finishTime:   null,
+    isDeadlocked: false,
+  };
+}
+
+/* ──────────────────────────────────────────────────────────
+   UI HELPERS — Adding Threads
+   ────────────────────────────────────────────────────────── */
+
+/**
+ * Reads the sidebar form and pushes a new thread into SimState.
+ * Called when the user clicks "Add Thread".
+ */
+function addThread() {
+  const name     = document.getElementById('t-name').value.trim() || 'T' + (SimState.threadCounter + 1);
+  const burst    = parseInt(document.getElementById('t-burst').value)    || 5;
+  const priority = parseInt(document.getElementById('t-priority').value) || 3;
+  const arrival  = parseInt(document.getElementById('t-arrival').value)  || 0;
+  const lock     = document.getElementById('t-lock').value;
+  const colour   = THREAD_COLOURS[SimState.threads.length % THREAD_COLOURS.length];
+
+  const thread = createThread(name, burst, priority, arrival, lock, colour);
+  SimState.threads.push(thread);
+
+  // Auto-increment thread name for convenience
+  const nextNum = (parseInt(name.replace(/\D/g, '')) || SimState.threadCounter) + 1;
+  document.getElementById('t-name').value = name.replace(/\d+$/, '') + nextNum;
+
+  log(`Thread ${name} created — Burst:${burst}, Priority:${priority}, Arrival:${arrival}`, 'info');
+  renderAll();
+}
+
+/* ──────────────────────────────────────────────────────────
+   SCHEDULING ALGORITHMS
+   ────────────────────────────────────────────────────────── */
+
+/**
+ * Returns the next thread to run based on the selected algorithm.
+ * Only considers threads that are in READY state and have arrived.
+ *
+ * @returns {Thread|null} Next thread to execute, or null if none available
+ */
+function schedule() {
+  // Collect all threads that are ready and have arrived by the current clock tick
+  const eligible = SimState.threads.filter(t =>
+    t.state === STATE.READY && t.arrivalTime <= SimState.clock
+  );
+
+  if (eligible.length === 0) return null;
+
+  switch (SimState.algo) {
+    /* FCFS — First Come First Served
+       Sort by arrival time; ties broken by insertion order (id) */
+    case 'fcfs':
+      return eligible.sort((a, b) => a.arrivalTime - b.arrivalTime || a.id.localeCompare(b.id))[0];
+
+    /* Round Robin — continue running current thread if quantum not exhausted */
+    case 'rr':
+      if (SimState.currentThread && SimState.currentThread.state === STATE.RUNNING
+          && SimState.quantumCounter < SimState.quantum) {
+        return SimState.currentThread;
+      }
+      // Rotate: pick first in queue, skip current to end
+      const rrSorted = eligible.sort((a, b) => a.arrivalTime - b.arrivalTime);
+      return rrSorted[0];
+
+    /* SJF — Shortest Job First (non-preemptive for simplicity) */
+    case 'sjf':
+      return eligible.sort((a, b) => a.remaining - b.remaining)[0];
+
+    /* Priority Scheduling — lowest number = highest priority */
+    case 'priority':
+      return eligible.sort((a, b) => a.priority - b.priority)[0];
+
+    default:
+      return eligible[0];
+  }
+}
+
+/* ──────────────────────────────────────────────────────────
+   LOCK (MUTEX / SEMAPHORE) MANAGEMENT
+   ────────────────────────────────────────────────────────── */
+
+/**
+ * Attempts to acquire a lock for the given thread.
+ * If the lock is free, the thread acquires it.
+ * If the lock is held by another thread, the thread is enqueued
+ * and its state changes to WAITING.
+ *
+ * @param {Thread} thread - The thread trying to acquire the lock
+ * @returns {boolean} true if lock was acquired, false if thread must wait
+ */
+function acquireLock(thread) {
+  if (thread.lockNeeded === 'none') return true;  // no lock required
+
+  const lock = SimState.locks[thread.lockNeeded];
+  if (!lock) return true;
+
+  if (lock.holder === null) {
+    // Lock is free — acquire it
+    lock.holder = thread.id;
+    log(`🔒 ${thread.name} acquired ${thread.lockNeeded}`, 'success');
+    return true;
+  } else if (lock.holder === thread.id) {
+    // Already holds the lock
+    return true;
+  } else {
+    // Lock held by another thread — add to wait queue and set WAITING state
+    if (!lock.queue.includes(thread.id)) {
+      lock.queue.push(thread.id);
+      log(`⏳ ${thread.name} waiting for ${thread.lockNeeded} (held by ${getThreadName(lock.holder)})`, 'warn');
+    }
+    thread.state = STATE.WAITING;
+    return false;
+  }
+}
+
+/**
+ * Releases the lock held by the given thread and wakes up
+ * the next thread in the wait queue (if any).
+ *
+ * @param {Thread} thread - The thread releasing the lock
+ */
+function releaseLock(thread) {
+  if (thread.lockNeeded === 'none') return;
+
+  const lock = SimState.locks[thread.lockNeeded];
+  if (!lock || lock.holder !== thread.id) return;
+
+  log(`🔓 ${thread.name} released ${thread.lockNeeded}`, 'success');
+  lock.holder = null;
+
+  // Wake up first waiting thread
+  if (lock.queue.length > 0) {
+    const nextId = lock.queue.shift();
+    const nextThread = SimState.threads.find(t => t.id === nextId);
+    if (nextThread && nextThread.state === STATE.WAITING) {
+      nextThread.state = STATE.READY;
+      log(`↑ ${nextThread.name} woke up and moved to READY`, 'info');
+    }
+  }
+}
+
+/**
+ * Returns the human-readable name of a thread by its ID.
+ * @param {string} id
+ * @returns {string}
+ */
+function getThreadName(id) {
+  const t = SimState.threads.find(t => t.id === id);
+  return t ? t.name : id;
+}
+
+/* ──────────────────────────────────────────────────────────
+   SIMULATION CONTROL
+   ────────────────────────────────────────────────────────── */
+
+/** Starts the simulation ticker */
+function startSimulation() {
+  if (SimState.threads.length === 0) {
+    log('⚠ Add at least one thread before starting.', 'warn');
+    return;
+  }
+
+  // Transition NEW threads that have arrived to READY
+  SimState.threads.forEach(t => {
+    if (t.state === STATE.NEW && t.arrivalTime <= SimState.clock) {
+      t.state = STATE.READY;
+    }
+  });
+
+  SimState.running = true;
+  document.getElementById('start-btn').disabled = true;
+  document.getElementById('stop-btn').disabled  = false;
+
+  const speed = parseInt(document.getElementById('speed-slider').value);
+  const interval = Math.max(100, 1100 - speed * 100); // 100ms (fast) – 1000ms (slow)
+
+  SimState.intervalId = setInterval(tick, interval);
+  log('▶ Simulation started', 'success');
+}
+
+/** Pauses the simulation (can be resumed) */
+function stopSimulation() {
+  SimState.running = false;
+  clearInterval(SimState.intervalId);
+  document.getElementById('start-btn').disabled = false;
+  document.getElementById('stop-btn').disabled  = true;
+  log('⏸ Simulation paused', 'warn');
+}
+
+/** Resets everything back to initial state */
+function resetSimulation() {
+  stopSimulation();
+  SimState.threads        = [];
+  SimState.clock          = 0;
+  SimState.currentThread  = null;
+  SimState.quantumCounter = 0;
+  SimState.ganttHistory   = [];
+  SimState.totalIdleTicks = 0;
+  SimState.threadCounter  = 0;
+
+  // Reset locks
+  LOCK_IDS.forEach(id => {
+    SimState.locks[id] = { holder: null, queue: [] };
+  });
+
+  document.getElementById('start-btn').disabled = false;
+  document.getElementById('stop-btn').disabled  = true;
+
+  log('↺ Simulation reset', 'warn');
+  renderAll();
+}
+
+/* ──────────────────────────────────────────────────────────
+   MAIN TICK — One Clock Cycle
+   ────────────────────────────────────────────────────────── */
+
+/**
+ * tick() — called once per simulated clock cycle.
+ *
+ * Algorithm:
+ *  1. Admit newly arrived NEW threads to READY queue.
+ *  2. For Round Robin, check if quantum is exhausted → preempt.
+ *  3. Ask schedule() for the next thread.
+ *  4. Try to acquire the thread's required lock.
+ *  5. Run the thread for one time unit (decrement remaining).
+ *  6. If remaining == 0, terminate and release lock.
+ *  7. Accumulate wait time for all READY threads.
+ *  8. Update Gantt history.
+ *  9. Advance clock.
+ * 10. Render UI.
+ * 11. If all threads done, stop simulation.
+ */
+function tick() {
+  SimState.clock++;
+
+  /* Step 1: Admit newly arrived threads */
+  SimState.threads.forEach(t => {
+    if (t.state === STATE.NEW && t.arrivalTime <= SimState.clock) {
+      t.state = STATE.READY;
+      log(`→ ${t.name} arrived and moved to READY`, 'info');
+    }
+  });
+
+  /* Step 2: Round Robin quantum preemption */
+  if (SimState.algo === 'rr' && SimState.currentThread
+      && SimState.currentThread.state === STATE.RUNNING
+      && SimState.quantumCounter >= SimState.quantum) {
+    SimState.currentThread.state = STATE.READY;
+    log(`⟳ ${SimState.currentThread.name} preempted after quantum`, 'warn');
+    SimState.currentThread  = null;
+    SimState.quantumCounter = 0;
+  }
+
+  /* Step 3: Select next thread to run */
+  const candidate = schedule();
+
+  if (!candidate) {
+    /* CPU Idle — no thread ready */
+    SimState.ganttHistory.push({ threadId: 'idle', color: '#1e2d4a', tick: SimState.clock });
+    SimState.totalIdleTicks++;
+    log(`[${SimState.clock}] CPU idle`, '');
+  } else {
+    /* Step 4: Try to acquire lock */
+    const gotLock = acquireLock(candidate);
+
+    if (!gotLock) {
+      /* Thread is waiting for lock — pick another or go idle */
+      const alt = schedule();
+      if (!alt || alt.id === candidate.id) {
+        SimState.ganttHistory.push({ threadId: 'idle', color: '#1e2d4a', tick: SimState.clock });
+        SimState.totalIdleTicks++;
+      } else {
+        runThread(alt);
+      }
+    } else {
+      /* Step 5: Run the thread */
+      runThread(candidate);
+    }
+  }
+
+  /* Step 7: Accumulate wait time for READY threads */
+  SimState.threads.forEach(t => {
+    if (t.state === STATE.READY) t.waitTime++;
+  });
+
+  /* Step 10: Render */
+  renderAll();
+
+  /* Step 11: Check if simulation is complete */
+  const allDone = SimState.threads.every(t =>
+    t.state === STATE.TERMINATED || t.state === STATE.NEW
+  );
+  const anyActive = SimState.threads.some(t =>
+    t.state !== STATE.TERMINATED && t.state !== STATE.NEW
+  );
+  if (!anyActive && allDone && SimState.threads.length > 0) {
+    stopSimulation();
+    log('✓ All threads completed!', 'success');
+    showMetricsSummary();
+  }
+}
+
+/**
+ * Executes one tick of CPU time for the given thread.
+ * @param {Thread} thread
+ */
+function runThread(thread) {
+  // Transition previous running thread back to READY (preemption scenario)
+  if (SimState.currentThread && SimState.currentThread !== thread
+      && SimState.currentThread.state === STATE.RUNNING) {
+    SimState.currentThread.state = STATE.READY;
+  }
+
+  thread.state        = STATE.RUNNING;
+  SimState.currentThread = thread;
+  SimState.quantumCounter++;
+
+  thread.remaining--;
+  thread.cpuTime++;
+
+  SimState.ganttHistory.push({
+    threadId: thread.id,
+    color:    thread.colour,
+    name:     thread.name,
+    tick:     SimState.clock,
+  });
+
+  log(`[${SimState.clock}] Running ${thread.name} — remaining: ${thread.remaining}`, '');
+
+  /* Step 6: Termination */
+  if (thread.remaining <= 0) {
+    thread.state       = STATE.TERMINATED;
+    thread.finishTime  = SimState.clock;
+    thread.turnAround  = SimState.clock - thread.arrivalTime;
+    SimState.currentThread  = null;
+    SimState.quantumCounter = 0;
+    releaseLock(thread);
+    log(`✓ ${thread.name} TERMINATED — turnaround: ${thread.turnAround}`, 'success');
+  }
+}
+
+/* ──────────────────────────────────────────────────────────
+   DEADLOCK DETECTION — Cycle Detection (DFS)
+   ────────────────────────────────────────────────────────── */
+
+/**
+ * Detects deadlocks using a Resource Allocation Graph (RAG).
+ * A cycle in the RAG indicates a deadlock.
+ *
+ * Algorithm: DFS-based cycle detection on the directed graph.
+ *   - Edge T→R means Thread T is waiting for Resource R
+ *   - Edge R→T means Resource R is held by Thread T
+ *
+ * If a cycle exists: marks involved threads as deadlocked.
+ */
+function detectDeadlock() {
+  /* Build adjacency: thread → thread via shared resource */
+  const waiting = {};   // threadId → lockId they're waiting for
+  const holding = {};   // lockId   → threadId that holds it
+
+  SimState.threads.forEach(t => {
+    if (t.state === STATE.WAITING && t.lockNeeded !== 'none') {
+      waiting[t.id] = t.lockNeeded;
+    }
+  });
+
+  LOCK_IDS.forEach(lockId => {
+    if (SimState.locks[lockId].holder) {
+      holding[lockId] = SimState.locks[lockId].holder;
+    }
+  });
+
+  /**
+   * Build a "waits-for" graph:
+   * If T1 waits for lock L, and T2 holds L → T1 waits-for T2
+   */
+  const waitsFor = {};
+  Object.keys(waiting).forEach(tid => {
+    const lockId = waiting[tid];
+    const holder  = holding[lockId];
+    if (holder && holder !== tid) {
+      waitsFor[tid] = holder;
+    }
+  });
+
+  /* DFS cycle detection */
+  const visited   = new Set();
+  const recStack  = new Set();
+  let   deadlocked = false;
+
+  function dfs(node) {
+    visited.add(node);
+    recStack.add(node);
+    const neighbour = waitsFor[node];
+    if (neighbour) {
+      if (!visited.has(neighbour)) {
+        if (dfs(neighbour)) return true;
+      } else if (recStack.has(neighbour)) {
+        return true;  // cycle found
+      }
+    }
+    recStack.delete(node);
+    return false;
+  }
+
+  Object.keys(waitsFor).forEach(node => {
+    if (!visited.has(node)) {
+      if (dfs(node)) deadlocked = true;
+    }
+  });
+
+  /* Mark/unmark deadlocked threads */
+  SimState.threads.forEach(t => {
+    t.isDeadlocked = deadlocked && Object.keys(waitsFor).includes(t.id);
+  });
+
+  const alertEl = document.getElementById('deadlock-alert');
+  if (deadlocked) {
+    alertEl.classList.add('visible');
+    log('⚠ DEADLOCK DETECTED! Circular wait found.', 'error');
+  } else {
+    alertEl.classList.remove('visible');
+    log('✓ No deadlock detected.', 'success');
+  }
+
+  renderResourceGraph(waitsFor);
+}
+
+/* ──────────────────────────────────────────────────────────
+   RENDER — Resource Allocation Graph on Canvas
+   ────────────────────────────────────────────────────────── */
+
+/**
+ * Draws the Resource Allocation Graph on a <canvas>.
+ * Circles = Threads, Squares = Locks.
+ * Arrows show hold (R→T) and wait (T→R) relationships.
+ *
+ * @param {Object} waitsFor - { threadId: holderId } cycle map
+ */
+function renderResourceGraph(waitsFor) {
+  const canvas = document.getElementById('resource-canvas');
+  const ctx    = canvas.getContext('2d');
+  const W      = canvas.width;
+  const H      = canvas.height;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0f1520';
+  ctx.fillRect(0, 0, W, H);
+
+  const activeThreads = SimState.threads.filter(t => t.state !== STATE.TERMINATED);
+  const locks         = LOCK_IDS;
+
+  /* Positions */
+  const tPositions = {};  // threadId → {x,y}
+  const lPositions = {};  // lockId  → {x,y}
+
+  activeThreads.forEach((t, i) => {
+    tPositions[t.id] = {
+      x: 50 + (i * (W - 80) / Math.max(activeThreads.length, 1)),
+      y: 50,
+    };
+  });
+  locks.forEach((lid, i) => {
+    lPositions[lid] = {
+      x: 40 + (i * (W - 60) / Math.max(locks.length, 1)),
+      y: H - 50,
+    };
+  });
+
+  /** Draw an arrow from (x1,y1) to (x2,y2) */
+  function drawArrow(x1, y1, x2, y2, color, dashed) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 1.5;
+    if (dashed) ctx.setLineDash([5, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    // Arrowhead
+    const angle = Math.atan2(y2 - y1, x2 - x1);
+    ctx.setLineDash([]);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - 8 * Math.cos(angle - 0.4), y2 - 8 * Math.sin(angle - 0.4));
+    ctx.lineTo(x2 - 8 * Math.cos(angle + 0.4), y2 - 8 * Math.sin(angle + 0.4));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  /* Draw hold edges: lock → thread (green) */
+  locks.forEach(lid => {
+    const lock = SimState.locks[lid];
+    if (lock.holder) {
+      const lp = lPositions[lid];
+      const tp = tPositions[lock.holder];
+      if (lp && tp) drawArrow(lp.x, lp.y - 15, tp.x, tp.y + 15, '#00c896', false);
+    }
+    /* Draw wait edges: thread → lock (amber dashed) */
+    lock.queue.forEach(tid => {
+      const tp = tPositions[tid];
+      const lp = lPositions[lid];
+      if (tp && lp) drawArrow(tp.x, tp.y + 15, lp.x, lp.y - 15, '#f7b94f', true);
+    });
+  });
+
+  /* Draw waits-for cycle (red) */
+  Object.entries(waitsFor).forEach(([from, to]) => {
+    const fp = tPositions[from];
+    const tp = tPositions[to];
+    if (fp && tp) {
+      drawArrow(fp.x, fp.y, tp.x, tp.y, '#f74f4f', false);
+    }
+  });
+
+  /* Draw thread nodes (circles) */
+  activeThreads.forEach(t => {
+    const p = tPositions[t.id];
+    if (!p) return;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 16, 0, Math.PI * 2);
+    ctx.fillStyle = t.isDeadlocked ? 'rgba(247,79,79,0.25)' : 'rgba(79,142,247,0.2)';
+    ctx.fill();
+    ctx.strokeStyle = t.isDeadlocked ? '#f74f4f' : t.colour;
+    ctx.lineWidth   = 2;
+    ctx.stroke();
+    ctx.fillStyle   = '#e8ecf4';
+    ctx.font        = '11px Space Grotesk, sans-serif';
+    ctx.textAlign   = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(t.name, p.x, p.y);
+  });
+
+  /* Draw lock nodes (squares) */
+  locks.forEach(lid => {
+    const p = lPositions[lid];
+    if (!p) return;
+    ctx.fillStyle   = 'rgba(247,185,79,0.15)';
+    ctx.strokeStyle = '#f7b94f';
+    ctx.lineWidth   = 1.5;
+    ctx.fillRect(p.x - 16, p.y - 14, 32, 28);
+    ctx.strokeRect(p.x - 16, p.y - 14, 32, 28);
+    ctx.fillStyle   = '#e8ecf4';
+    ctx.font        = '10px JetBrains Mono, monospace';
+    ctx.textAlign   = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(lid, p.x, p.y);
+  });
+}
+
+/* ──────────────────────────────────────────────────────────
+   RENDER — Main UI Refresh
+   ────────────────────────────────────────────────────────── */
+
+/** Renders all UI components. Called every tick. */
+function renderAll() {
+  renderStats();
+  renderThreadTable();
+  renderGantt();
+  renderLocks();
+  renderCpuUtil();
+  detectDeadlock();  // re-run RAG on every tick
+}
+
+/** Updates the 4 stat chips at the top */
+function renderStats() {
+  const total     = SimState.threads.length;
+  const done      = SimState.threads.filter(t => t.state === STATE.TERMINATED).length;
+  const totalTicks = SimState.clock;
+  const util      = totalTicks === 0 ? 0
+    : Math.round(((totalTicks - SimState.totalIdleTicks) / totalTicks) * 100);
+
+  document.getElementById('stat-threads').textContent = total;
+  document.getElementById('stat-cpu').textContent     = util + '%';
+  document.getElementById('stat-tick').textContent    = SimState.clock;
+  document.getElementById('stat-done').textContent    = done;
+}
+
+/** Rebuilds the thread queue table */
+function renderThreadTable() {
+  const tbody = document.getElementById('thread-tbody');
+
+  if (SimState.threads.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:24px">No threads yet — add some from the left panel.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = SimState.threads.map(t => {
+    const pct     = Math.round(((t.burstTime - t.remaining) / t.burstTime) * 100);
+    const isRunning = t.state === STATE.RUNNING;
+    const stateClass = t.isDeadlocked ? 'deadlock' : t.state;
+    return `
+      <tr class="${isRunning ? 'state-running-row' : ''}">
+        <td><div class="thread-name">
+          <span class="thread-dot" style="background:${t.colour}"></span>
+          <span>${t.name}</span>
+        </div></td>
+        <td><span class="badge badge-${stateClass}">${t.isDeadlocked ? '💀 deadlock' : t.state}</span></td>
+        <td style="font-family:var(--font-mono)">${t.burstTime}</td>
+        <td style="font-family:var(--font-mono)">${t.remaining}</td>
+        <td style="font-family:var(--font-mono)">${t.priority}</td>
+        <td style="font-family:var(--font-mono)">${t.arrivalTime}</td>
+        <td style="font-size:12px;color:var(--text-secondary)">${t.lockNeeded === 'none' ? '—' : t.lockNeeded}</td>
+        <td>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div class="progress-bar">
+              <div class="progress-fill" style="width:${pct}%;background:${t.colour}"></div>
+            </div>
+            <span style="font-size:11px;font-family:var(--font-mono);color:var(--text-secondary)">${pct}%</span>
+          </div>
+        </td>
+        <td>
+          <button class="btn btn-ghost btn-sm" onclick="killThread('${t.id}')">✕ Kill</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+/** Draws the Gantt chart */
+function renderGantt() {
+  const container = document.getElementById('gantt-chart');
+  if (SimState.ganttHistory.length === 0) {
+    container.innerHTML = `<p style="color:var(--text-muted);font-size:13px">Gantt chart will appear here during simulation.</p>`;
+    return;
+  }
+
+  // Build per-thread rows
+  const threadIds = [...new Set(SimState.ganttHistory.map(g => g.threadId))];
+  const maxTick   = SimState.ganttHistory.length;
+
+  let html = '';
+  threadIds.forEach(tid => {
+    const thread = SimState.threads.find(t => t.id === tid);
+    const name   = thread ? thread.name : 'Idle';
+    const colour = thread ? thread.colour : '#1e2d4a';
+
+    const cells = SimState.ganttHistory.map((g, idx) => {
+      const active = (g.threadId === tid);
+      return `<div class="gantt-cell" style="${active ? `background:${colour};border-color:${colour}` : ''}" title="${active ? name + ' @t' + g.tick : ''}"></div>`;
+    }).join('');
+
+    html += `<div class="gantt-row">
+      <span class="gantt-label">${name}</span>
+      ${cells}
+    </div>`;
+  });
+
+  // Time axis
+  const ticks = SimState.ganttHistory.map((_, i) =>
+    `<span class="gantt-tick">${i % 5 === 0 ? i : ''}</span>`
+  ).join('');
+  html += `<div class="gantt-time-row">
+    <span class="gantt-time-label">t</span>${ticks}
+  </div>`;
+
+  container.innerHTML = html;
+  // Auto-scroll to end
+  const ganttEl = document.getElementById('gantt-container');
+  ganttEl.scrollLeft = ganttEl.scrollWidth;
+}
+
+/** Renders the lock status indicators */
+function renderLocks() {
+  const grid = document.getElementById('lock-grid');
+  grid.innerHTML = LOCK_IDS.map(lid => {
+    const lock   = SimState.locks[lid];
+    const free   = lock.holder === null;
+    const holder = free ? '—' : getThreadName(lock.holder);
+    const queue  = lock.queue.map(getThreadName).join(', ');
+    return `
+      <div class="lock-item">
+        <span class="lock-icon">${free ? '🔓' : '🔒'}</span>
+        <span class="lock-name">${lid}</span>
+        <span class="lock-holder">${free ? 'Free' : 'by ' + holder}${queue ? ' | Queue: ' + queue : ''}</span>
+        <span class="lock-status ${free ? 'free' : 'held'}">${free ? 'FREE' : 'HELD'}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+/** Renders per-thread CPU utilisation bars */
+function renderCpuUtil() {
+  const body = document.getElementById('cpu-util-body');
+  if (SimState.clock === 0 || SimState.threads.length === 0) {
+    body.innerHTML = `<p style="color:var(--text-muted);font-size:13px">Start simulation to see CPU utilisation.</p>`;
+    return;
+  }
+
+  const html = SimState.threads.map(t => {
+    const pct = SimState.clock === 0 ? 0 : Math.round((t.cpuTime / SimState.clock) * 100);
+    return `
+      <div class="cpu-bar-wrap">
+        <span class="cpu-bar-label" style="color:${t.colour}">${t.name}</span>
+        <div class="cpu-bar-track">
+          <div class="cpu-bar-fill" style="width:${pct}%;background:${t.colour}"></div>
+        </div>
+        <span class="cpu-bar-val">${pct}%</span>
+      </div>
+    `;
+  }).join('');
+
+  body.innerHTML = html;
+}
+
+/** Shows final turnaround / wait time summary after completion */
+function showMetricsSummary() {
+  const done = SimState.threads.filter(t => t.state === STATE.TERMINATED);
+  if (done.length === 0) return;
+
+  const avgTAT = (done.reduce((s, t) => s + t.turnAround, 0) / done.length).toFixed(1);
+  const avgWT  = (done.reduce((s, t) => s + t.waitTime, 0)  / done.length).toFixed(1);
+
+  log(`━━━ METRICS ━━━ Avg Turnaround: ${avgTAT} | Avg Wait: ${avgWT}`, 'success');
+  done.forEach(t => {
+    log(`  ${t.name}: TAT=${t.turnAround} WT=${t.waitTime} CPU=${t.cpuTime}`, 'info');
+  });
+}
+
+/* ──────────────────────────────────────────────────────────
+   MISC ACTIONS
+   ────────────────────────────────────────────────────────── */
+
+/** Forcibly terminates a running/waiting thread */
+function killThread(id) {
+  const t = SimState.threads.find(t => t.id === id);
+  if (!t || t.state === STATE.TERMINATED) return;
+  releaseLock(t);
+  t.state      = STATE.TERMINATED;
+  t.finishTime = SimState.clock;
+  t.turnAround = SimState.clock - t.arrivalTime;
+  if (SimState.currentThread?.id === id) {
+    SimState.currentThread  = null;
+    SimState.quantumCounter = 0;
+  }
+  log(`✕ ${t.name} was killed`, 'error');
+  renderAll();
+}
+
+/** Removes all terminated threads from the list */
+function clearTerminated() {
+  SimState.threads = SimState.threads.filter(t => t.state !== STATE.TERMINATED);
+  renderAll();
+}
+
+/** Clears the Gantt chart history */
+function clearGantt() {
+  SimState.ganttHistory = [];
+  renderGantt();
+}
+
+/** Clears the system log console */
+function clearLog() {
+  document.getElementById('log-console').innerHTML = '';
+}
+
+/* ──────────────────────────────────────────────────────────
+   SETTINGS HANDLERS
+   ────────────────────────────────────────────────────────── */
+
+/** Updates the scheduling algorithm and adjusts the UI */
+function setAlgo(algo, btnEl) {
+  SimState.algo = algo;
+  document.querySelectorAll('.algo-tab').forEach(b => b.classList.remove('active'));
+  btnEl.classList.add('active');
+  document.getElementById('algo-desc').textContent = ALGO_DESC[algo] || '';
+  document.getElementById('rr-quantum-wrap').style.display = algo === 'rr' ? 'block' : 'none';
+  log(`Scheduler changed to ${algo.toUpperCase()}`, 'info');
+}
+
+/** Speed slider handler — restarts the interval at new speed */
+document.getElementById('speed-slider').addEventListener('input', function () {
+  document.getElementById('speed-label').textContent = this.value + 'x';
+  if (SimState.running) {
+    clearInterval(SimState.intervalId);
+    const interval = Math.max(100, 1100 - parseInt(this.value) * 100);
+    SimState.intervalId = setInterval(tick, interval);
+  }
+});
+
+/** Quantum field sync */
+document.getElementById('rr-quantum').addEventListener('input', function () {
+  SimState.quantum = Math.max(1, parseInt(this.value) || 2);
+});
+
+/* ──────────────────────────────────────────────────────────
+   LOG CONSOLE
+   ────────────────────────────────────────────────────────── */
+
+/**
+ * Appends a line to the system log console.
+ * @param {string} msg   - Message text
+ * @param {string} level - CSS class: 'info'|'success'|'warn'|'error'|''
+ */
+function log(msg, level = '') {
+  const console = document.getElementById('log-console');
+  const time    = String(SimState.clock).padStart(4, '0');
+  const el      = document.createElement('div');
+  el.className  = 'log-line fade-in';
+  el.innerHTML  = `<span class="log-time">[${time}]</span><span class="log-msg ${level}">${msg}</span>`;
+  console.appendChild(el);
+  console.scrollTop = console.scrollHeight;
+
+  // Keep log manageable — prune oldest entries
+  while (console.children.length > 200) {
+    console.removeChild(console.firstChild);
+  }
+}
+
+/* ──────────────────────────────────────────────────────────
+   INIT — Load default threads for demo
+   ────────────────────────────────────────────────────────── */
+
+/**
+ * Populates the simulator with a set of example threads
+ * so students can see it working immediately without manual setup.
+ */
+function loadDemo() {
+  const demos = [
+    { name:'T1', burst:8,  priority:2, arrival:0, lock:'mutex1' },
+    { name:'T2', burst:4,  priority:1, arrival:2, lock:'mutex1' },
+    { name:'T3', burst:6,  priority:3, arrival:1, lock:'mutex2' },
+    { name:'T4', burst:3,  priority:2, arrival:4, lock:'none'   },
+  ];
+  demos.forEach((d, i) => {
+    const colour = THREAD_COLOURS[i % THREAD_COLOURS.length];
+    SimState.threads.push(createThread(d.name, d.burst, d.priority, d.arrival, d.lock, colour));
+  });
+  log('Demo threads loaded. Press ▶ Start to begin.', 'success');
+  renderAll();
+}
+
+// Kick off with demo data
+loadDemo();
+renderLocks();
+</script>
+</body>
+</html>
